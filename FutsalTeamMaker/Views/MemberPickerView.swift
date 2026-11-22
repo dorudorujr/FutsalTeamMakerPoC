@@ -64,6 +64,7 @@ struct MemberPickerView: View {
                                     .foregroundStyle(selectedIDs.contains(player.id) ? Color.accentColor : Color.secondary)
                                 Text(player.name)
                                     .foregroundStyle(.primary)
+                                GenderBadge(gender: player.gender)
                                 Spacer()
                                 SkillStars(skill: player.skill)
                             }

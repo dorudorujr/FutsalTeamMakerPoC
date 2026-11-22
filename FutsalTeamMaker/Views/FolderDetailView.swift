@@ -8,6 +8,8 @@ struct FolderDetailView: View {
     @State private var editingPlayer: Player?
     @State private var isPickingMembers = false
     @State private var isRenaming = false
+    @State private var isAddingGroup = false
+    @State private var editingGroup: EventGroup?
     @State private var splitRequest: SplitRequest?
 
     private var members: [Player] { event.sortedMembers }
@@ -29,7 +31,8 @@ struct FolderDetailView: View {
                             onToggle: { event.setParticipating(player, !event.isParticipating(player)) },
                             onEdit: { editingPlayer = player }
                         )
-                        .swipeActions {
+                        // 1回のスワイプだけで外れないよう、ボタンを押したときだけ外す
+                        .swipeActions(allowsFullSwipe: false) {
                             Button("外す", role: .destructive) {
                                 event.remove(player)
                             }
@@ -46,8 +49,11 @@ struct FolderDetailView: View {
                         .textCase(nil)
                     }
                 } footer: {
-                    Text("左にスワイプすると、この大会のメンバーから外します（選手名簿には残ります）。")
+                    Text("左にスワイプして「外す」を押すと、この大会のメンバーから外します（選手名簿には残ります）。")
                 }
+            }
+            if members.count >= 2 {
+                groupSection
             }
         }
         .overlay {
@@ -89,8 +95,14 @@ struct FolderDetailView: View {
         .sheet(item: $editingPlayer) { player in
             PlayerEditView(player: player)
         }
+        .sheet(isPresented: $isAddingGroup) {
+            GroupEditView(event: event)
+        }
+        .sheet(item: $editingGroup) { group in
+            GroupEditView(event: event, group: group)
+        }
         .navigationDestination(item: $splitRequest) { request in
-            TeamResultView(members: request.members, teamCount: request.teamCount)
+            TeamResultView(members: request.members, teamCount: request.teamCount, groups: request.groups)
         }
         .onChange(of: participants.count, initial: true) {
             event.teamCount = min(max(event.teamCount, teamCountRange.lowerBound), teamCountRange.upperBound)
@@ -111,7 +123,8 @@ struct FolderDetailView: View {
             Button {
                 splitRequest = SplitRequest(
                     members: participants.map(\.asMember),
-                    teamCount: event.teamCount
+                    teamCount: event.teamCount,
+                    groups: event.memberGroups
                 )
             } label: {
                 Text("実力が均等になるように分ける")
@@ -125,6 +138,41 @@ struct FolderDetailView: View {
         .background(.bar)
     }
 
+    private var groupSection: some View {
+        Section {
+            ForEach(event.groups) { group in
+                Button {
+                    editingGroup = group
+                } label: {
+                    HStack {
+                        Text(event.players(in: group).map(\.name).joined(separator: "・"))
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        Text(group.isRequired ? "必ず" : "できれば")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .swipeActions(allowsFullSwipe: false) {
+                    Button("削除", role: .destructive) {
+                        event.deleteGroup(id: group.id)
+                    }
+                }
+            }
+            Button {
+                isAddingGroup = true
+            } label: {
+                Label("追加", systemImage: "plus")
+            }
+        } header: {
+            Text("同じチームにするメンバー")
+        } footer: {
+            Text("友達同士など、同じチームにしたい選手を選びます。この大会だけで使います。")
+        }
+    }
+
     private func toggleAll() {
         let newValue = participants.count != members.count
         for player in members {
@@ -133,10 +181,11 @@ struct FolderDetailView: View {
     }
 }
 
-/// 結果画面へ渡す、分けた時点の参加者とチーム数
+/// 結果画面へ渡す、分けた時点の参加者・チーム数・グループ
 struct SplitRequest: Hashable {
     let members: [TeamMember]
     let teamCount: Int
+    let groups: [MemberGroup]
 }
 
 private struct MemberRow: View {
@@ -159,6 +208,7 @@ private struct MemberRow: View {
                 HStack {
                     Text(player.name)
                         .foregroundStyle(isParticipating ? .primary : .secondary)
+                    GenderBadge(gender: player.gender)
                     Spacer()
                     SkillStars(skill: player.skill)
                 }
