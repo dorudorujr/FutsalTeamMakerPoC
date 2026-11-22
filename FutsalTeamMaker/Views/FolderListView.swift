@@ -28,9 +28,6 @@ struct FolderListView: View {
                     Label("大会がありません", systemImage: "folder.badge.plus")
                 } description: {
                     Text("右上のボタンから大会のフォルダを作ってください。選手は名簿に1回登録すれば、ほかの大会でも使えます。")
-                } actions: {
-                    Button("サンプルの大会を作る") { addSample() }
-                        .buttonStyle(.bordered)
                 }
             }
         }
@@ -64,18 +61,6 @@ struct FolderListView: View {
         for index in offsets {
             modelContext.delete(events[index])
         }
-    }
-
-    /// 名簿に選手がいればその選手で、いなければサンプルの選手を登録して大会を作る
-    private func addSample() {
-        var players = (try? modelContext.fetch(FetchDescriptor<Player>(sortBy: [SortDescriptor(\.createdAt)]))) ?? []
-        if players.isEmpty {
-            players = Player.samples.map { Player(name: $0.0, skill: $0.1, gender: $0.2) }
-            players.forEach { modelContext.insert($0) }
-        }
-        let event = GameEvent(name: "サンプル大会")
-        modelContext.insert(event)
-        event.add(players)
     }
 }
 

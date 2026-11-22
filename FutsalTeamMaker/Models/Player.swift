@@ -42,7 +42,7 @@ final class Player {
 }
 
 extension Player {
-    /// 動作確認用のサンプル選手
+    /// プレビューと UI テストで使う選手（アプリの画面からは登録しない）
     static let samples: [(String, Int, Gender)] = [
         ("佐藤", 5, .male), ("鈴木", 4, .male), ("高橋", 4, .male), ("田中", 3, .male),
         ("伊藤", 3, .female), ("渡辺", 3, .male), ("山本", 2, .male), ("中村", 2, .female),
