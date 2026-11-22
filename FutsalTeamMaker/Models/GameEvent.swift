@@ -16,6 +16,8 @@ final class GameEvent {
     var absentPlayerIDs: [UUID] = []
     /// この大会で同じチームにしたい選手のグループ（友達同士など）
     var groups: [EventGroup] = []
+    /// 最後に分けた結果（`SavedResult` を JSON にしたもの）。入れ子の構造をそのまま保存せず、まとめて1つのデータにしている。
+    var lastResultData: Data?
 
     init(name: String, teamCount: Int = 2) {
         self.id = UUID()
@@ -62,6 +64,14 @@ final class GameEvent {
         pruneRemovedMembers()
     }
 
+    // MARK: - 最後に分けた結果
+
+    /// 最後に分けた結果。分けたときや手で直したときに上書きする。
+    var lastResult: SavedResult? {
+        get { lastResultData.flatMap { try? JSONDecoder().decode(SavedResult.self, from: $0) } }
+        set { lastResultData = newValue.flatMap { try? JSONEncoder().encode($0) } }
+    }
+
     // MARK: - グループ
 
     /// グループを追加する。同じ id のグループがあれば置き換える。
@@ -102,6 +112,17 @@ final class GameEvent {
             return group.memberIDs.count >= 2 ? group : nil
         }
     }
+}
+
+/// 保存しておく結果。分けた時点の選手（名前・実力・性別）をそのまま残す。
+struct SavedResult: Codable, Hashable {
+    var result: SplitResult
+    /// 自動で分けたあとに手で直したか
+    var isEdited: Bool
+    var savedAt: Date
+
+    /// 結果に入っている選手（チームの順）
+    var members: [TeamMember] { result.teams.flatMap(\.members) }
 }
 
 /// 同じチームにしたい選手のグループ

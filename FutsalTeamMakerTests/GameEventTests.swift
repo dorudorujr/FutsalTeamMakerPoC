@@ -129,6 +129,38 @@ struct GameEventTests {
         #expect(a.groups.isEmpty)
     }
 
+    @Test("最後に分けた結果を保存し、読み直しても同じ結果になる")
+    func lastResultRoundTrip() throws {
+        let event = GameEvent(name: "A大会")
+        context.insert(event)
+        #expect(event.lastResult == nil)
+
+        let members = [
+            TeamMember(id: UUID(), name: "佐藤", skill: 5, gender: .female),
+            TeamMember(id: UUID(), name: "鈴木", skill: 4),
+            TeamMember(id: UUID(), name: "田中", skill: 3, gender: .male),
+        ]
+        let result = SplitResult(
+            teams: [Team(id: 0, members: [members[0]]), Team(id: 1, members: [members[1], members[2]])],
+            groups: [MemberGroup(memberIDs: [members[0].id, members[1].id], isRequired: true)]
+        )
+        let saved = SavedResult(result: result, isEdited: true, savedAt: Date(timeIntervalSince1970: 1_800_000_000))
+        event.lastResult = saved
+        try context.save()
+
+        let fetched = try #require(try context.fetch(FetchDescriptor<GameEvent>()).first)
+        #expect(fetched.lastResult == saved)
+        #expect(fetched.lastResult?.members.map(\.name) == ["佐藤", "鈴木", "田中"])
+        #expect(fetched.lastResult?.result.brokenGroups.count == 1)
+
+        // 上書きすると最新の1つだけが残る
+        var newer = saved
+        newer.isEdited = false
+        newer.savedAt = saved.savedAt.addingTimeInterval(60)
+        event.lastResult = newer
+        #expect(event.lastResult == newer)
+    }
+
     @Test("名簿から選手を消すと、大会のメンバーからも外れる")
     func deletingPlayerRemovesFromEvents() throws {
         let players = makePlayers(["佐藤", "鈴木"])

@@ -84,6 +84,28 @@ final class TeamResultDragTests: XCTestCase {
         XCTAssertLessThan(teamD.frame.minY, before - 40)
     }
 
+    /// 手で直した結果が大会に残り、「前回の結果」から同じ結果を開ける
+    func testLastResultIsSavedAndReopened() throws {
+        openSplitResult()
+        let dragged = memberRows(in: "チームA").firstMatch
+        let target = memberRows(in: "チームB").firstMatch
+        let draggedID = dragged.identifier
+        let targetID = target.identifier
+        dragged.press(forDuration: 1.0, thenDragTo: target)
+        XCTAssertEqual(row(of: draggedID).value as? String, "チームB")
+
+        // 大会の画面へ戻り、前回の結果を開く
+        app.navigationBars.buttons.firstMatch.tap()
+        let lastResult = app.buttons.matching(NSPredicate(format: "label BEGINSWITH '前回の結果'")).firstMatch
+        XCTAssertTrue(lastResult.waitForExistence(timeout: 3))
+        lastResult.tap()
+
+        XCTAssertTrue(app.staticTexts["チームA"].waitForExistence(timeout: 5))
+        XCTAssertEqual(row(of: draggedID).value as? String, "チームB")
+        XCTAssertEqual(row(of: targetID).value as? String, "チームA")
+        XCTAssertTrue(app.staticTexts["手で直した結果です。「分け直す」を押すと、自動で分け直します。"].exists)
+    }
+
     func testDropOnSameTeamDoesNothing() throws {
         openSplitResult()
         let rows = memberRows(in: "チームA")
