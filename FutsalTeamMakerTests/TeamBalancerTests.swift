@@ -202,3 +202,61 @@ struct TeamBalancerTests {
         #expect(result.teams.flatMap(\.members).count == 4)
     }
 }
+
+struct ManualAssignmentTests {
+    private func makeResult() -> (SplitResult, [TeamMember]) {
+        let players = (0..<6).map { TeamMember(id: UUID(), name: "選手\($0)", skill: $0 + 1) }
+        let result = SplitResult(
+            teams: [
+                Team(id: 0, members: Array(players[0..<3])),
+                Team(id: 1, members: Array(players[3..<6])),
+            ],
+            groups: [MemberGroup(memberIDs: [players[0].id, players[1].id], isRequired: true)]
+        )
+        return (result, players)
+    }
+
+    @Test("選手をほかのチームへ移せる")
+    func moveMember() {
+        var (result, players) = makeResult()
+        result.move(players[0].id, toTeam: 1)
+
+        #expect(result.teams[0].members.map(\.id) == [players[1].id, players[2].id])
+        #expect(result.teams[1].members.count == 4)
+        #expect(result.teamID(of: players[0].id) == 1)
+    }
+
+    @Test("別のチームの2人を入れ替えられる。人数は変わらない")
+    func swapMembers() {
+        var (result, players) = makeResult()
+        result.swap(players[2].id, players[5].id)
+
+        #expect(result.teamID(of: players[2].id) == 1)
+        #expect(result.teamID(of: players[5].id) == 0)
+        #expect(result.teams.map(\.members.count) == [3, 3])
+        #expect(result.teams[0].totalSkill == 1 + 2 + 6)
+    }
+
+    @Test("同じチームの2人の入れ替えと、今いるチームへの移動は何もしない")
+    func noOpOperations() {
+        var (result, players) = makeResult()
+        let before = result.teams
+        result.swap(players[0].id, players[1].id)
+        result.move(players[0].id, toTeam: 0)
+        result.move(UUID(), toTeam: 1)
+
+        #expect(result.teams == before)
+    }
+
+    @Test("手で直すと、同じチームにできなかったメンバーも今のチームから求め直す")
+    func brokenGroupsFollowManualEdits() {
+        var (result, players) = makeResult()
+        #expect(result.brokenGroups.isEmpty)
+
+        result.swap(players[1].id, players[4].id)
+        #expect(result.brokenGroups.count == 1)
+
+        result.swap(players[0].id, players[3].id)
+        #expect(result.brokenGroups.isEmpty)
+    }
+}
