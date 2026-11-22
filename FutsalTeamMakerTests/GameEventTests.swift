@@ -101,6 +101,34 @@ struct GameEventTests {
         #expect(event.absentPlayerIDs.isEmpty)
     }
 
+    @Test("グループは大会ごとに保存され、メンバーから外すとグループからも外れる")
+    func groupsArePerEventAndPruned() throws {
+        let players = makePlayers(["佐藤", "鈴木", "田中"])
+        let a = GameEvent(name: "A大会")
+        let b = GameEvent(name: "B大会")
+        context.insert(a)
+        context.insert(b)
+        a.add(players)
+        b.add(players)
+
+        let group = EventGroup(memberIDs: players.map(\.id), isRequired: false)
+        a.saveGroup(group)
+        try context.save()
+
+        #expect(a.groups == [group])
+        #expect(b.groups.isEmpty)
+        #expect(a.playerIDsInGroups(excluding: nil) == Set(players.map(\.id)))
+        #expect(a.playerIDsInGroups(excluding: group.id).isEmpty)
+
+        // 3人 → 2人になってもグループは残る
+        a.remove(players[0])
+        #expect(a.groups.first?.memberIDs == [players[1].id, players[2].id])
+
+        // 2人 → 1人になるとグループは消える
+        a.remove(players[1])
+        #expect(a.groups.isEmpty)
+    }
+
     @Test("名簿から選手を消すと、大会のメンバーからも外れる")
     func deletingPlayerRemovesFromEvents() throws {
         let players = makePlayers(["佐藤", "鈴木"])

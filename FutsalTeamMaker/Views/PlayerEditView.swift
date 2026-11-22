@@ -12,6 +12,7 @@ struct PlayerEditView: View {
 
     @State private var name: String
     @State private var skill: Int
+    @State private var gender: Gender
     @FocusState private var nameFocused: Bool
 
     init(player: Player? = nil, onCreate: ((Player) -> Void)? = nil) {
@@ -19,6 +20,7 @@ struct PlayerEditView: View {
         self.onCreate = onCreate
         _name = State(initialValue: player?.name ?? "")
         _skill = State(initialValue: player?.skill ?? 3)
+        _gender = State(initialValue: player?.gender ?? .unspecified)
     }
 
     private var trimmedName: String {
@@ -46,6 +48,18 @@ struct PlayerEditView: View {
                     } else {
                         Text("1（初心者）〜 5（経験者）。変更は、この選手が入っているすべての大会に反映されます。")
                     }
+                }
+                Section {
+                    Picker("性別", selection: $gender) {
+                        ForEach(Gender.allCases, id: \.self) { gender in
+                            Text(gender.label).tag(gender)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                } header: {
+                    Text("性別")
+                } footer: {
+                    Text("女性の人数がチーム間でそろうように分けます。")
                 }
                 if let player, !player.events.isEmpty {
                     Section("参加している大会") {
@@ -75,8 +89,9 @@ struct PlayerEditView: View {
         if let player {
             player.name = trimmedName
             player.skill = Player.clamp(skill)
+            player.gender = gender
         } else {
-            let newPlayer = Player(name: trimmedName, skill: skill)
+            let newPlayer = Player(name: trimmedName, skill: skill, gender: gender)
             modelContext.insert(newPlayer)
             onCreate?(newPlayer)
         }

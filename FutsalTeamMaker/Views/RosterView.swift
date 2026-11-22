@@ -20,8 +20,11 @@ struct RosterView: View {
                         } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(player.name)
-                                        .foregroundStyle(.primary)
+                                    HStack {
+                                        Text(player.name)
+                                            .foregroundStyle(.primary)
+                                        GenderBadge(gender: player.gender)
+                                    }
                                     Text(player.events.isEmpty ? "どの大会にも入っていません" : "\(player.events.count) 大会")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)

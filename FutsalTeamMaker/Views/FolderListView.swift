@@ -70,7 +70,7 @@ struct FolderListView: View {
     private func addSample() {
         var players = (try? modelContext.fetch(FetchDescriptor<Player>(sortBy: [SortDescriptor(\.createdAt)]))) ?? []
         if players.isEmpty {
-            players = Player.samples.map { Player(name: $0.0, skill: $0.1) }
+            players = Player.samples.map { Player(name: $0.0, skill: $0.1, gender: $0.2) }
             players.forEach { modelContext.insert($0) }
         }
         let event = GameEvent(name: "サンプル大会")

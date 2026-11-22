@@ -14,6 +14,8 @@ final class GameEvent {
     var members: [Player] = []
     /// メンバーのうち、今回は参加しない選手
     var absentPlayerIDs: [UUID] = []
+    /// この大会で同じチームにしたい選手のグループ（友達同士など）
+    var groups: [EventGroup] = []
 
     init(name: String, teamCount: Int = 2) {
         self.id = UUID()
@@ -49,15 +51,63 @@ final class GameEvent {
         members.append(contentsOf: players.filter { !existing.contains($0.id) })
     }
 
-    /// メンバーを入れ替える。外した選手の「不参加」の記録も消す。
+    /// メンバーを入れ替える。外した選手の「不参加」の記録とグループからも消す。
     func setMembers(_ players: [Player]) {
         members = players
-        let ids = Set(players.map(\.id))
-        absentPlayerIDs.removeAll { !ids.contains($0) }
+        pruneRemovedMembers()
     }
 
     func remove(_ player: Player) {
         members.removeAll { $0.id == player.id }
-        absentPlayerIDs.removeAll { $0 == player.id }
+        pruneRemovedMembers()
     }
+
+    // MARK: - グループ
+
+    /// グループを追加する。同じ id のグループがあれば置き換える。
+    func saveGroup(_ group: EventGroup) {
+        if let index = groups.firstIndex(where: { $0.id == group.id }) {
+            groups[index] = group
+        } else {
+            groups.append(group)
+        }
+    }
+
+    func deleteGroup(id: UUID) {
+        groups.removeAll { $0.id == id }
+    }
+
+    /// ほかのグループに入っている選手。1人の選手は1つのグループにだけ入れる。
+    func playerIDsInGroups(excluding groupID: UUID?) -> Set<UUID> {
+        Set(groups.filter { $0.id != groupID }.flatMap(\.memberIDs))
+    }
+
+    /// グループのメンバー（名簿に登録した順）
+    func players(in group: EventGroup) -> [Player] {
+        sortedMembers.filter { group.memberIDs.contains($0.id) }
+    }
+
+    /// チーム分けに渡すグループ
+    var memberGroups: [MemberGroup] {
+        groups.map { MemberGroup(memberIDs: $0.memberIDs, isRequired: $0.isRequired) }
+    }
+
+    /// メンバーから外れた選手を、不参加の記録とグループから消す。2人未満になったグループは消す。
+    private func pruneRemovedMembers() {
+        let ids = Set(members.map(\.id))
+        absentPlayerIDs.removeAll { !ids.contains($0) }
+        groups = groups.compactMap { group in
+            var group = group
+            group.memberIDs.removeAll { !ids.contains($0) }
+            return group.memberIDs.count >= 2 ? group : nil
+        }
+    }
+}
+
+/// 同じチームにしたい選手のグループ
+struct EventGroup: Codable, Hashable, Identifiable {
+    var id = UUID()
+    var memberIDs: [UUID]
+    /// true なら必ず同じチーム、false ならできれば同じチーム
+    var isRequired: Bool
 }
