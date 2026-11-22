@@ -102,7 +102,14 @@ struct FolderDetailView: View {
             GroupEditView(event: event, group: group)
         }
         .navigationDestination(item: $splitRequest) { request in
-            TeamResultView(members: request.members, teamCount: request.teamCount, groups: request.groups)
+            TeamResultView(
+                members: request.members,
+                teamCount: request.teamCount,
+                groups: request.groups,
+                saved: request.saved
+            ) { result in
+                event.lastResult = result
+            }
         }
         .onChange(of: participants.count, initial: true) {
             event.teamCount = min(max(event.teamCount, teamCountRange.lowerBound), teamCountRange.upperBound)
@@ -111,6 +118,23 @@ struct FolderDetailView: View {
 
     private var splitPanel: some View {
         VStack(spacing: 12) {
+            if let lastResult = event.lastResult {
+                Button {
+                    splitRequest = SplitRequest(saved: lastResult)
+                } label: {
+                    HStack {
+                        Label("前回の結果", systemImage: "clock.arrow.circlepath")
+                        Text(lastResult.savedAt.formatted(.dateTime.month().day().hour().minute()))
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Divider()
+            }
             Stepper(value: $event.teamCount, in: teamCountRange) {
                 HStack {
                     Text("チーム数")
@@ -186,6 +210,22 @@ struct SplitRequest: Hashable {
     let members: [TeamMember]
     let teamCount: Int
     let groups: [MemberGroup]
+    /// 保存した結果を開くときに渡す。nil なら新しく分ける。
+    var saved: SavedResult?
+
+    init(members: [TeamMember], teamCount: Int, groups: [MemberGroup]) {
+        self.members = members
+        self.teamCount = teamCount
+        self.groups = groups
+    }
+
+    /// 保存した結果を開く。分け直すときは、その結果に入っている選手とチーム数を使う。
+    init(saved: SavedResult) {
+        self.members = saved.members
+        self.teamCount = saved.result.teams.count
+        self.groups = saved.result.groups
+        self.saved = saved
+    }
 }
 
 private struct MemberRow: View {

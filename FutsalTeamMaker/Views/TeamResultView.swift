@@ -3,11 +3,16 @@ import SwiftUI
 /// チーム分けの結果。選手をドラッグして、ほかのチームの選手と入れ替えたり、ほかのチームへ移したりできる。
 /// 「分け直す」で同じ参加者をもう一度自動で分ける。
 ///
+/// 分けたときと手で直したときに `onSave` を呼ぶ（大会の「前回の結果」として残す）。
+/// `saved` を渡すと、分け直さずにその結果を開く。
+///
 /// List の行に付けた dropDestination はドロップを受け取れないため、ScrollView で並べている。
 struct TeamResultView: View {
     let members: [TeamMember]
     let teamCount: Int
     var groups: [MemberGroup] = []
+    var saved: SavedResult?
+    var onSave: (SavedResult) -> Void = { _ in }
 
     @State private var result: SplitResult?
     /// 自動で分けたあとに手で直したか
@@ -66,7 +71,14 @@ struct TeamResultView: View {
             }
         }
         .onAppear {
-            if result == nil { split() }
+            guard result == nil else { return }
+            if let saved {
+                // 保存した結果を開くときは、分け直さずにそのまま出す
+                result = saved.result
+                isEdited = saved.isEdited
+            } else {
+                split()
+            }
         }
     }
 
@@ -229,6 +241,7 @@ struct TeamResultView: View {
             self.result?.swap(draggedID, targetID)
             isEdited = true
         }
+        save()
         return true
     }
 
@@ -239,6 +252,7 @@ struct TeamResultView: View {
             self.result?.move(draggedID, toTeam: teamID)
             isEdited = true
         }
+        save()
         return true
     }
 
@@ -247,6 +261,13 @@ struct TeamResultView: View {
     private func split() {
         result = TeamBalancer.split(members, teamCount: teamCount, groups: groups)
         isEdited = false
+        save()
+    }
+
+    /// 今の結果を大会の「前回の結果」として残す
+    private func save() {
+        guard let result else { return }
+        onSave(SavedResult(result: result, isEdited: isEdited, savedAt: .now))
     }
 
     private func summary(of team: Team) -> String {

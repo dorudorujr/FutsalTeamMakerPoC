@@ -16,7 +16,7 @@ enum Gender: String, Codable, CaseIterable, Sendable {
 }
 
 /// チーム分けの対象になる選手。画面や保存の形式に依存しない値型。
-struct TeamMember: Hashable, Identifiable, Sendable {
+struct TeamMember: Codable, Hashable, Identifiable, Sendable {
     let id: UUID
     let name: String
     /// 実力（1〜5）
@@ -25,14 +25,14 @@ struct TeamMember: Hashable, Identifiable, Sendable {
 }
 
 /// 同じチームにしたい選手のグループ
-struct MemberGroup: Hashable, Sendable {
+struct MemberGroup: Codable, Hashable, Sendable {
     let memberIDs: [UUID]
     /// true なら必ず同じチーム、false ならできれば同じチーム
     let isRequired: Bool
 }
 
 /// 分けたあとの1チーム。
-struct Team: Identifiable, Hashable, Sendable {
+struct Team: Codable, Identifiable, Hashable, Sendable {
     let id: Int
     var members: [TeamMember]
 
@@ -48,7 +48,7 @@ struct Team: Identifiable, Hashable, Sendable {
 }
 
 /// チーム分けの結果
-struct SplitResult: Sendable {
+struct SplitResult: Codable, Hashable, Sendable {
     var teams: [Team]
     /// 判定に使ったグループ（参加している選手だけを含む）
     let groups: [MemberGroup]
