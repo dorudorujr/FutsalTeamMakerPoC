@@ -52,11 +52,29 @@ struct SplitResult: Codable, Hashable, Sendable {
     var teams: [Team]
     /// 判定に使ったグループ（参加している選手だけを含む）
     let groups: [MemberGroup]
+    /// 比べた前回のチーム（チームごとの選手の id）。空なら前回とは比べていない。
+    var previousTeams: [[UUID]] = []
 
     /// 同じチームにできなかったグループ。手で直したあとも、今のチームから求める。
     var brokenGroups: [MemberGroup] {
         groups.filter { group in
             Set(group.memberIDs.compactMap { teamID(of: $0) }).count > 1
+        }
+    }
+
+    /// 前回も同じチームだった2人の組。手で直したあとも、今のチームから求める。
+    var repeatedPairs: [[UUID]] {
+        TeamBalancer.Conditions(groups: groups, previousTeams: previousTeams)
+            .repeatedPairs(in: teams.map(\.members))
+    }
+
+    /// 前回も同じチームで、今回も一緒になった人のまとまり（今のチームごと）。表示に使う。
+    var repeatedTeammates: [RepeatedTeammates] {
+        let conditions = TeamBalancer.Conditions(groups: groups, previousTeams: previousTeams)
+        return teams.flatMap { team in
+            conditions.repeatedClusters(in: team.members).map {
+                RepeatedTeammates(teamID: team.id, members: $0)
+            }
         }
     }
 
@@ -91,6 +109,23 @@ struct SplitResult: Codable, Hashable, Sendable {
     }
 }
 
+/// 前回も同じチームで、今回も同じチームになった人のまとまり
+struct RepeatedTeammates: Hashable, Sendable {
+    /// 今回のチーム
+    let teamID: Int
+    let members: [TeamMember]
+}
+
+extension SplitResult {
+    /// 前回のチームを持たない、前のバージョンで保存した結果も読めるようにする
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        teams = try container.decode([Team].self, forKey: .teams)
+        groups = try container.decode([MemberGroup].self, forKey: .groups)
+        previousTeams = try container.decodeIfPresent([[UUID]].self, forKey: .previousTeams) ?? []
+    }
+}
+
 /// 条件を守りながら、実力の合計がなるべく均等になるように選手を分ける。
 ///
 /// 結果の良さは次の順に比べる（前の条件ほど優先する）。
@@ -98,7 +133,8 @@ struct SplitResult: Codable, Hashable, Sendable {
 /// 2. 女性の人数の差が小さい
 /// 3. 実力の合計の差が小さい
 /// 4. 「できれば同じチーム」のグループが分かれていない
-/// 5. 実力の合計のばらつき（二乗和）が小さい
+/// 5. 前回も同じチームだった2人の組が少ない（`previousTeams` を渡したとき。同じグループの2人は数えない）
+/// 6. 実力の合計のばらつき（二乗和）が小さい
 ///
 /// 手順:
 /// 1. グループはひとかたまりとして、大きい順・実力の高い順（同じならランダム）に、空きのあるチームへ入れる。
@@ -112,16 +148,21 @@ enum TeamBalancer {
         _ players: [TeamMember],
         teamCount: Int,
         groups: [MemberGroup] = [],
+        previousTeams: [[UUID]] = [],
         trials: Int = 40
     ) -> SplitResult {
         var rng = SystemRandomNumberGenerator()
-        return split(players, teamCount: teamCount, groups: groups, trials: trials, using: &rng)
+        return split(
+            players, teamCount: teamCount, groups: groups, previousTeams: previousTeams,
+            trials: trials, using: &rng
+        )
     }
 
     static func split(
         _ players: [TeamMember],
         teamCount: Int,
         groups: [MemberGroup] = [],
+        previousTeams: [[UUID]] = [],
         trials: Int = 40,
         using rng: inout some RandomNumberGenerator
     ) -> SplitResult {
@@ -131,13 +172,14 @@ enum TeamBalancer {
         }
 
         let activeGroups = normalize(groups, presentIDs: Set(players.map(\.id)))
+        let conditions = Conditions(groups: activeGroups, previousTeams: previousTeams)
 
         var bestCandidates: [[[TeamMember]]] = []
         var bestScore: Score?
 
         for _ in 0..<max(1, trials) {
-            let teams = singleTrial(players, teamCount: teamCount, groups: activeGroups, using: &rng)
-            let score = Score(teams, groups: activeGroups)
+            let teams = singleTrial(players, teamCount: teamCount, conditions: conditions, using: &rng)
+            let score = Score(teams, conditions: conditions)
             if let current = bestScore, current < score { continue }
             if bestScore != score {
                 bestScore = score
@@ -149,8 +191,71 @@ enum TeamBalancer {
         let chosen = bestCandidates.randomElement(using: &rng) ?? []
         return SplitResult(
             teams: chosen.enumerated().map { Team(id: $0.offset, members: $0.element) },
-            groups: activeGroups
+            groups: activeGroups,
+            previousTeams: previousTeams
         )
+    }
+
+    /// 分けるときの条件（同じチームにするグループと、前回のチーム）
+    struct Conditions {
+        let groups: [MemberGroup]
+        /// 選手の id → 前回のチームの番号
+        private let previousTeamIndex: [UUID: Int]
+        /// 選手の id → 入っているグループの番号
+        private let groupIndex: [UUID: Int]
+
+        init(groups: [MemberGroup], previousTeams: [[UUID]]) {
+            self.groups = groups
+            var previous: [UUID: Int] = [:]
+            for (index, ids) in previousTeams.enumerated() {
+                for id in ids { previous[id] = index }
+            }
+            previousTeamIndex = previous
+            var grouped: [UUID: Int] = [:]
+            for (index, group) in groups.enumerated() {
+                for id in group.memberIDs { grouped[id] = index }
+            }
+            groupIndex = grouped
+        }
+
+        var hasPreviousTeams: Bool { !previousTeamIndex.isEmpty }
+
+        /// 前回も同じチームだった2人の組。同じグループの2人は、わざと同じにしているので数えない。
+        func repeatedPairs(in teams: [[TeamMember]]) -> [[UUID]] {
+            guard hasPreviousTeams else { return [] }
+            var pairs: [[UUID]] = []
+            for members in teams {
+                for i in members.indices {
+                    for j in members.indices where j > i {
+                        let a = members[i].id
+                        let b = members[j].id
+                        guard let previousA = previousTeamIndex[a], previousA == previousTeamIndex[b] else { continue }
+                        if let groupA = groupIndex[a], groupA == groupIndex[b] { continue }
+                        pairs.append([a, b])
+                    }
+                }
+            }
+            return pairs
+        }
+
+        /// 1つのチームの中で、前回も同じチームだった人をまとめる。
+        /// 被りに数える2人（同じグループの2人以外）がいるまとまりだけを返す。
+        func repeatedClusters(in members: [TeamMember]) -> [[TeamMember]] {
+            guard hasPreviousTeams else { return [] }
+            var clusters: [Int: [TeamMember]] = [:]
+            var order: [Int] = []
+            for member in members {
+                guard let previous = previousTeamIndex[member.id] else { continue }
+                if clusters[previous] == nil { order.append(previous) }
+                clusters[previous, default: []].append(member)
+            }
+            return order.compactMap { clusters[$0] }.filter { !repeatedPairs(in: [$0]).isEmpty }
+        }
+
+        /// 入れ替えても結果が変わりうる選手か（グループに入っているか、前回のチームと比べる選手か）
+        func matters(_ id: UUID) -> Bool {
+            groupIndex[id] != nil || previousTeamIndex[id] != nil
+        }
     }
 
     // MARK: - Private
@@ -161,23 +266,25 @@ enum TeamBalancer {
         let femaleSpread: Int
         let skillSpread: Int
         let brokenPreferred: Int
+        let repeatedPairs: Int
         let sumOfSquares: Int
 
-        init(_ teams: [[TeamMember]], groups: [MemberGroup]) {
+        init(_ teams: [[TeamMember]], conditions: Conditions) {
             let totals = teams.map { $0.reduce(0) { $0 + $1.skill } }
             let females = teams.map { $0.filter { $0.gender == .female }.count }
             let teamIndex = teamIndexByID(teams)
-            let broken = groups.filter { isBroken($0, teamIndex: teamIndex) }
+            let broken = conditions.groups.filter { isBroken($0, teamIndex: teamIndex) }
 
             brokenRequired = broken.filter(\.isRequired).count
             femaleSpread = (females.max() ?? 0) - (females.min() ?? 0)
             skillSpread = (totals.max() ?? 0) - (totals.min() ?? 0)
             brokenPreferred = broken.filter { !$0.isRequired }.count
+            repeatedPairs = conditions.repeatedPairs(in: teams).count
             sumOfSquares = totals.reduce(0) { $0 + $1 * $1 }
         }
 
-        private var key: (Int, Int, Int, Int, Int) {
-            (brokenRequired, femaleSpread, skillSpread, brokenPreferred, sumOfSquares)
+        private var key: (Int, Int, Int, Int, Int, Int) {
+            (brokenRequired, femaleSpread, skillSpread, brokenPreferred, repeatedPairs, sumOfSquares)
         }
 
         static func < (lhs: Score, rhs: Score) -> Bool { lhs.key < rhs.key }
@@ -212,9 +319,10 @@ enum TeamBalancer {
     private static func singleTrial(
         _ players: [TeamMember],
         teamCount: Int,
-        groups: [MemberGroup],
+        conditions: Conditions,
         using rng: inout some RandomNumberGenerator
     ) -> [[TeamMember]] {
+        let groups = conditions.groups
         // グループはひとかたまり、それ以外の選手は1人ずつのかたまりにする
         let byID = Dictionary(uniqueKeysWithValues: players.map { ($0.id, $0) })
         let grouped = Set(groups.flatMap(\.memberIDs))
@@ -261,15 +369,14 @@ enum TeamBalancer {
             females[target] += unit.filter { $0.gender == .female }.count
         }
 
-        improveBySwapping(&teams, groups: groups)
+        improveBySwapping(&teams, conditions: conditions)
         return teams
     }
 
     /// 2チーム間で1人ずつ入れ替えて、結果が良くなる入れ替えがなくなるまで続ける。
     /// 入れ替えなので各チームの人数は変わらない。
-    private static func improveBySwapping(_ teams: inout [[TeamMember]], groups: [MemberGroup]) {
-        let grouped = Set(groups.flatMap(\.memberIDs))
-        var current = Score(teams, groups: groups)
+    private static func improveBySwapping(_ teams: inout [[TeamMember]], conditions: Conditions) {
+        var current = Score(teams, conditions: conditions)
         var improved = true
         var rounds = 0
         while improved && rounds < 50 {
@@ -281,14 +388,14 @@ enum TeamBalancer {
                         for j in teams[b].indices {
                             let x = teams[a][i]
                             let y = teams[b][j]
-                            // 実力も性別も同じでグループにも入っていなければ、入れ替えても変わらない
+                            // 実力も性別も同じで、グループにも前回のチームにも関わらなければ、入れ替えても変わらない
                             if x.skill == y.skill && x.gender == y.gender
-                                && !grouped.contains(x.id) && !grouped.contains(y.id) {
+                                && !conditions.matters(x.id) && !conditions.matters(y.id) {
                                 continue
                             }
                             teams[a][i] = y
                             teams[b][j] = x
-                            let score = Score(teams, groups: groups)
+                            let score = Score(teams, conditions: conditions)
                             if score < current {
                                 current = score
                                 improved = true

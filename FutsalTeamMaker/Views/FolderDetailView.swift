@@ -15,6 +15,12 @@ struct FolderDetailView: View {
     private var members: [Player] { event.sortedMembers }
     private var participants: [Player] { event.participants }
 
+    /// 同じチームになるのを避けたい前回のチーム（切り替えが入っていて、前回の結果があるときだけ）
+    private var previousTeamsToAvoid: [[UUID]] {
+        guard event.avoidsRepeatingTeammates, let lastResult = event.lastResult else { return [] }
+        return lastResult.result.teams.map { $0.members.map(\.id) }
+    }
+
     /// 1チーム1人以上になる範囲で、2〜8チームまで選べる
     private var teamCountRange: ClosedRange<Int> {
         2...max(2, min(8, participants.count))
@@ -54,6 +60,13 @@ struct FolderDetailView: View {
             }
             if members.count >= 2 {
                 groupSection
+            }
+            if event.lastResult != nil {
+                Section {
+                    Toggle("前回と同じチームの人をなるべく分ける", isOn: $event.avoidsRepeatingTeammates)
+                } footer: {
+                    Text("前回確定した結果で同じチームだった人を、なるべく別のチームにします。")
+                }
             }
         }
         .overlay {
@@ -106,6 +119,7 @@ struct FolderDetailView: View {
                 members: request.members,
                 teamCount: request.teamCount,
                 groups: request.groups,
+                previousTeams: request.previousTeams,
                 saved: request.saved
             ) { result in
                 event.lastResult = result
@@ -148,7 +162,8 @@ struct FolderDetailView: View {
                 splitRequest = SplitRequest(
                     members: participants.map(\.asMember),
                     teamCount: event.teamCount,
-                    groups: event.memberGroups
+                    groups: event.memberGroups,
+                    previousTeams: previousTeamsToAvoid
                 )
             } label: {
                 Text("実力が均等になるように分ける")
@@ -210,20 +225,24 @@ struct SplitRequest: Hashable {
     let members: [TeamMember]
     let teamCount: Int
     let groups: [MemberGroup]
+    /// 同じチームになるのを避けたい前回のチーム。空なら前回とは比べない。
+    let previousTeams: [[UUID]]
     /// 保存した結果を開くときに渡す。nil なら新しく分ける。
     var saved: SavedResult?
 
-    init(members: [TeamMember], teamCount: Int, groups: [MemberGroup]) {
+    init(members: [TeamMember], teamCount: Int, groups: [MemberGroup], previousTeams: [[UUID]]) {
         self.members = members
         self.teamCount = teamCount
         self.groups = groups
+        self.previousTeams = previousTeams
     }
 
-    /// 保存した結果を開く。分け直すときは、その結果に入っている選手とチーム数を使う。
+    /// 保存した結果を開く。分け直すときは、その結果に入っている選手・チーム数・比べた前回のチームを使う。
     init(saved: SavedResult) {
         self.members = saved.members
         self.teamCount = saved.result.teams.count
         self.groups = saved.result.groups
+        self.previousTeams = saved.result.previousTeams
         self.saved = saved
     }
 }

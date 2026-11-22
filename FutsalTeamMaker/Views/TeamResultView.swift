@@ -3,18 +3,24 @@ import SwiftUI
 /// チーム分けの結果。選手をドラッグして、ほかのチームの選手と入れ替えたり、ほかのチームへ移したりできる。
 /// 「分け直す」で同じ参加者をもう一度自動で分ける。
 ///
-/// 分けたときと手で直したときに `onSave` を呼ぶ（大会の「前回の結果」として残す）。
-/// `saved` を渡すと、分け直さずにその結果を開く。
+/// 「確定」を押したときだけ `onConfirm` を呼び（大会の「前回の結果」として残す）、大会の画面へ戻る。
+/// 分けただけ・手で直しただけの結果は残さない。
+/// `saved` を渡すと、分け直さずにその結果を確定済みとして開く。
 ///
 /// List の行に付けた dropDestination はドロップを受け取れないため、ScrollView で並べている。
 struct TeamResultView: View {
     let members: [TeamMember]
     let teamCount: Int
     var groups: [MemberGroup] = []
+    /// 同じチームになるのを避けたい前回のチーム。空なら前回とは比べない。
+    var previousTeams: [[UUID]] = []
     var saved: SavedResult?
-    var onSave: (SavedResult) -> Void = { _ in }
+    var onConfirm: (SavedResult) -> Void = { _ in }
 
+    @Environment(\.dismiss) private var dismiss
     @State private var result: SplitResult?
+    /// 最後に確定した結果。今の結果と同じなら「確定済み」
+    @State private var confirmedResult: SplitResult?
     /// 自動で分けたあとに手で直したか
     @State private var isEdited = false
     @State private var isConfirmingReshuffle = false
@@ -25,6 +31,7 @@ struct TeamResultView: View {
 
     private var teams: [Team] { result?.teams ?? [] }
     private var hasGender: Bool { members.contains { $0.gender != .unspecified } }
+    private var isConfirmed: Bool { result != nil && result == confirmedResult }
 
     var body: some View {
         ScrollView {
@@ -40,24 +47,15 @@ struct TeamResultView: View {
             .padding()
         }
         .background(Color(.systemGroupedBackground))
+        .safeAreaInset(edge: .bottom) {
+            actionPanel
+        }
         .navigationTitle("結果")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 ShareLink(item: shareText) {
                     Label("共有", systemImage: "square.and.arrow.up")
-                }
-            }
-            ToolbarItem(placement: .bottomBar) {
-                Button {
-                    if isEdited {
-                        isConfirmingReshuffle = true
-                    } else {
-                        withAnimation { split() }
-                    }
-                } label: {
-                    Label("分け直す", systemImage: "arrow.triangle.2.circlepath")
-                        .labelStyle(.titleAndIcon)
                 }
             }
         }
@@ -73,8 +71,9 @@ struct TeamResultView: View {
         .onAppear {
             guard result == nil else { return }
             if let saved {
-                // 保存した結果を開くときは、分け直さずにそのまま出す
+                // 確定した結果を開くときは、分け直さずにそのまま出す
                 result = saved.result
+                confirmedResult = saved.result
                 isEdited = saved.isEdited
             } else {
                 split()
@@ -86,11 +85,18 @@ struct TeamResultView: View {
 
     private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            summaryRow("参加者", "\(members.count) 人")
-                .cardBackground()
+            VStack(spacing: 0) {
+                summaryRow("参加者", "\(members.count) 人")
+                if let result, !result.previousTeams.isEmpty {
+                    Divider()
+                    repeatedTeammatesRow(result.repeatedTeammates)
+                }
+            }
+            .cardBackground()
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("選手を長押ししてドラッグし、別のチームの選手の上で離すと入れ替わります。チームの選手がいないところ（チーム名など）で離すと、そのチームへ移ります。")
+                Text("「確定」を押すと、大会の「前回の結果」として残り、大会の画面に戻ります。次に分けるときは、この結果と比べます。")
                 if isEdited {
                     Text("手で直した結果です。「分け直す」を押すと、自動で分け直します。")
                 }
@@ -101,6 +107,34 @@ struct TeamResultView: View {
         }
     }
 
+    /// 画面の下の「分け直す」と「確定」
+    private var actionPanel: some View {
+        HStack(spacing: 12) {
+            Button {
+                if isEdited {
+                    isConfirmingReshuffle = true
+                } else {
+                    withAnimation { split() }
+                }
+            } label: {
+                Label("分け直す", systemImage: "arrow.triangle.2.circlepath")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+
+            Button(action: confirm) {
+                Label(isConfirmed ? "確定済み" : "確定",
+                      systemImage: isConfirmed ? "checkmark.circle.fill" : "checkmark")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(isConfirmed || result == nil)
+        }
+        .controlSize(.large)
+        .padding()
+        .background(.bar)
+    }
+
     private func summaryRow(_ title: String, _ value: String) -> some View {
         HStack {
             Text(title)
@@ -108,6 +142,43 @@ struct TeamResultView: View {
             Text(value)
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 12)
+    }
+
+    /// 前回も同じチームで、今回も一緒になった人。今のチームごとに、前回のチームでまとめて出す。
+    private func repeatedTeammatesRow(_ repeated: [RepeatedTeammates]) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("前回も一緒だった人")
+                Spacer()
+                if repeated.isEmpty {
+                    Text("なし")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            if !repeated.isEmpty {
+                Text("1行ごとに、前回も同じチームだった人です。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(teams) { team in
+                let clusters = repeated.filter { $0.teamID == team.id }
+                if !clusters.isEmpty {
+                    // 1行が「前回も同じチームだった人」のまとまり
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(team.name)
+                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(clusters, id: \.self) { cluster in
+                                Text(cluster.members.sorted { $0.skill > $1.skill }.map(\.name).joined(separator: "・"))
+                            }
+                        }
+                    }
+                    .font(.subheadline)
+                }
+            }
         }
         .padding(.horizontal)
         .padding(.vertical, 12)
@@ -143,6 +214,7 @@ struct TeamResultView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(team.name)
                     .font(.headline)
+                    .accessibilityIdentifier("teamHeader.\(team.name)")
                 Spacer()
                 Text(summary(of: team))
                     .font(.subheadline)
@@ -241,7 +313,6 @@ struct TeamResultView: View {
             self.result?.swap(draggedID, targetID)
             isEdited = true
         }
-        save()
         return true
     }
 
@@ -252,22 +323,22 @@ struct TeamResultView: View {
             self.result?.move(draggedID, toTeam: teamID)
             isEdited = true
         }
-        save()
         return true
     }
 
     // MARK: - その他
 
     private func split() {
-        result = TeamBalancer.split(members, teamCount: teamCount, groups: groups)
+        result = TeamBalancer.split(members, teamCount: teamCount, groups: groups, previousTeams: previousTeams)
         isEdited = false
-        save()
     }
 
-    /// 今の結果を大会の「前回の結果」として残す
-    private func save() {
+    /// 今の結果を確定して大会の「前回の結果」として残し、大会の画面へ戻る
+    private func confirm() {
         guard let result else { return }
-        onSave(SavedResult(result: result, isEdited: isEdited, savedAt: .now))
+        onConfirm(SavedResult(result: result, isEdited: isEdited, savedAt: .now))
+        confirmedResult = result
+        dismiss()
     }
 
     private func summary(of team: Team) -> String {
