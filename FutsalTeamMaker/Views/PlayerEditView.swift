@@ -47,6 +47,13 @@ struct PlayerEditView: View {
                         Text("1（初心者）〜 5（経験者）。変更は、この選手が入っているすべての大会に反映されます。")
                     }
                 }
+                if let player, !player.events.isEmpty {
+                    Section("参加している大会") {
+                        ForEach(player.events.sorted { $0.createdAt > $1.createdAt }) { event in
+                            Label(event.name, systemImage: "folder")
+                        }
+                    }
+                }
             }
             .navigationTitle(player == nil ? "選手を追加" : "選手を編集")
             .navigationBarTitleDisplayMode(.inline)
