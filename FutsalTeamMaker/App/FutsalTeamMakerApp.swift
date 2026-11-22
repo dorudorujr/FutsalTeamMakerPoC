@@ -6,9 +6,9 @@ struct FutsalTeamMakerApp: App {
     var body: some Scene {
         WindowGroup {
             NavigationStack {
-                PlayerListView()
+                FolderListView()
             }
         }
-        .modelContainer(for: Player.self)
+        .modelContainer(for: [Player.self, GameEvent.self])
     }
 }

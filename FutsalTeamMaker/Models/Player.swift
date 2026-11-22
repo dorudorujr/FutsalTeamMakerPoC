@@ -1,22 +1,24 @@
 import Foundation
 import SwiftData
 
-/// 主催者が登録しておく選手。端末内（SwiftData）にだけ保存する。
+/// 選手名簿に登録する選手。端末内（SwiftData）にだけ保存する。
+/// 同じ選手を複数の大会（フォルダ）で使い回すので、実力を直すとすべての大会に反映される。
 @Model
 final class Player {
     var id: UUID
     var name: String
     /// 実力（1〜5）
     var skill: Int
-    /// 今回のイベントに参加するか
-    var isParticipating: Bool
     var createdAt: Date
 
-    init(name: String, skill: Int, isParticipating: Bool = true) {
+    /// この選手が入っている大会。選手を名簿から消すと、各大会のメンバーからも外れる。
+    @Relationship(inverse: \GameEvent.members)
+    var events: [GameEvent] = []
+
+    init(name: String, skill: Int) {
         self.id = UUID()
         self.name = name
         self.skill = Player.clamp(skill)
-        self.isParticipating = isParticipating
         self.createdAt = .now
     }
 
