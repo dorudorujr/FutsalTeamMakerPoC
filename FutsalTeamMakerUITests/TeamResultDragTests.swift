@@ -2,11 +2,16 @@ import XCTest
 
 /// 結果の画面で、ドラッグして選手を入れ替えたり移したりできるかを確かめる。
 /// サンプルの大会（12人）を2チームに分けるので、チームA・Bは6人ずつになる。
+@MainActor
 final class TeamResultDragTests: XCTestCase {
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
         continueAfterFailure = false
+    }
+
+    /// アプリを起動し、サンプルの大会を作って2チームに分けた結果の画面を開く
+    private func openSplitResult() {
         app = XCUIApplication()
         app.launchArguments = ["-UITestInMemory"]
         app.launch()
@@ -29,6 +34,7 @@ final class TeamResultDragTests: XCTestCase {
     }
 
     func testDragOntoPlayerOfOtherTeamSwaps() throws {
+        openSplitResult()
         let dragged = memberRows(in: "チームA").firstMatch
         let target = memberRows(in: "チームB").firstMatch
         let draggedID = dragged.identifier
@@ -44,6 +50,7 @@ final class TeamResultDragTests: XCTestCase {
     }
 
     func testDragOntoTeamNameMoves() throws {
+        openSplitResult()
         let dragged = memberRows(in: "チームA").firstMatch
         let draggedID = dragged.identifier
 
@@ -57,6 +64,7 @@ final class TeamResultDragTests: XCTestCase {
 
     /// 画面の下の端で止めると自動でスクロールし、画面の外のチームへも運べる
     func testAutoScrollsWhileDraggingNearBottomEdge() throws {
+        openSplitResult()
         // 一度戻ってチーム数を4にし、画面の外にチームができるようにする
         app.navigationBars.buttons.firstMatch.tap()
         let stepper = app.steppers.firstMatch
@@ -77,6 +85,7 @@ final class TeamResultDragTests: XCTestCase {
     }
 
     func testDropOnSameTeamDoesNothing() throws {
+        openSplitResult()
         let rows = memberRows(in: "チームA")
         let dragged = rows.element(boundBy: 0)
         let target = rows.element(boundBy: 1)
