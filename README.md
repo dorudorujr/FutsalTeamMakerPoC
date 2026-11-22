@@ -15,7 +15,8 @@
   - 友達同士などを「同じチームにするメンバー」として選ぶ。大会ごとに設定し、「必ず同じチーム」か「できれば同じチーム」を選べる
   - 同じチームにできなかったメンバーは結果に表示する
 - 各チームの人数・実力の合計・平均と、チーム間の合計の差を表示する
-- 「分け直す」で、同じくらい均等な別の組み合わせを出す
+- 分けた結果をドラッグ＆ドロップで手で直す。選手を長押ししてドラッグし、別のチームの選手の上で離すと入れ替わり、チームの選手がいないところ（チーム名など）で離すとそのチームへ移る
+- 「分け直す」で、同じくらい均等な別の組み合わせを出す（手で直したあとは確認してから分け直す）
 - 結果を LINE などに貼れるテキストで共有する（実力は載せません）
 
 ## チーム分けの方法
@@ -47,7 +48,7 @@ xcodegen generate
 open FutsalTeamMaker.xcodeproj
 ```
 
-テスト（Swift Testing）:
+テスト（ロジックは Swift Testing、結果の画面のドラッグ＆ドロップは XCUITest。UI テストではデータをメモリ上にだけ保存します）:
 
 ```sh
 xcodebuild test -project FutsalTeamMaker.xcodeproj -scheme FutsalTeamMaker -destination 'platform=iOS Simulator,name=iPhone 15 Pro'

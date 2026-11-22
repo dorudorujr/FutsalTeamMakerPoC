@@ -49,9 +49,46 @@ struct Team: Identifiable, Hashable, Sendable {
 
 /// チーム分けの結果
 struct SplitResult: Sendable {
-    let teams: [Team]
-    /// 同じチームにできなかったグループ（参加している選手だけを含む）
-    let brokenGroups: [MemberGroup]
+    var teams: [Team]
+    /// 判定に使ったグループ（参加している選手だけを含む）
+    let groups: [MemberGroup]
+
+    /// 同じチームにできなかったグループ。手で直したあとも、今のチームから求める。
+    var brokenGroups: [MemberGroup] {
+        groups.filter { group in
+            Set(group.memberIDs.compactMap { teamID(of: $0) }).count > 1
+        }
+    }
+
+    func teamID(of memberID: UUID) -> Int? {
+        teams.first { $0.members.contains { $0.id == memberID } }?.id
+    }
+
+    // MARK: - 手で直す
+
+    /// 選手をほかのチームへ移す。人数はそろわなくなることがある。
+    mutating func move(_ memberID: UUID, toTeam teamID: Int) {
+        guard let from = teams.firstIndex(where: { $0.members.contains { $0.id == memberID } }),
+              let to = teams.firstIndex(where: { $0.id == teamID }),
+              from != to,
+              let index = teams[from].members.firstIndex(where: { $0.id == memberID })
+        else { return }
+        let member = teams[from].members.remove(at: index)
+        teams[to].members.append(member)
+    }
+
+    /// 別のチームにいる2人を入れ替える。同じチームの2人なら何もしない。
+    mutating func swap(_ firstID: UUID, _ secondID: UUID) {
+        guard let firstTeam = teams.firstIndex(where: { $0.members.contains { $0.id == firstID } }),
+              let secondTeam = teams.firstIndex(where: { $0.members.contains { $0.id == secondID } }),
+              firstTeam != secondTeam,
+              let firstIndex = teams[firstTeam].members.firstIndex(where: { $0.id == firstID }),
+              let secondIndex = teams[secondTeam].members.firstIndex(where: { $0.id == secondID })
+        else { return }
+        let first = teams[firstTeam].members[firstIndex]
+        teams[firstTeam].members[firstIndex] = teams[secondTeam].members[secondIndex]
+        teams[secondTeam].members[secondIndex] = first
+    }
 }
 
 /// 条件を守りながら、実力の合計がなるべく均等になるように選手を分ける。
@@ -88,9 +125,9 @@ enum TeamBalancer {
         trials: Int = 40,
         using rng: inout some RandomNumberGenerator
     ) -> SplitResult {
-        guard teamCount > 0 else { return SplitResult(teams: [], brokenGroups: []) }
+        guard teamCount > 0 else { return SplitResult(teams: [], groups: []) }
         guard !players.isEmpty else {
-            return SplitResult(teams: (0..<teamCount).map { Team(id: $0, members: []) }, brokenGroups: [])
+            return SplitResult(teams: (0..<teamCount).map { Team(id: $0, members: []) }, groups: [])
         }
 
         let activeGroups = normalize(groups, presentIDs: Set(players.map(\.id)))
@@ -110,10 +147,9 @@ enum TeamBalancer {
         }
 
         let chosen = bestCandidates.randomElement(using: &rng) ?? []
-        let teamIndex = teamIndexByID(chosen)
         return SplitResult(
             teams: chosen.enumerated().map { Team(id: $0.offset, members: $0.element) },
-            brokenGroups: activeGroups.filter { isBroken($0, teamIndex: teamIndex) }
+            groups: activeGroups
         )
     }
 
