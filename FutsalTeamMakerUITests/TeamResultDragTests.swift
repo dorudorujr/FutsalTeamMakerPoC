@@ -1,7 +1,7 @@
 import XCTest
 
 /// 結果の画面で、ドラッグして選手を入れ替えたり移したりできるかを確かめる。
-/// サンプルの大会（12人）を2チームに分けるので、チームA・Bは6人ずつになる。
+/// 起動時に入れた「テスト大会」（12人）を2チームに分けるので、チームA・Bは6人ずつになる。
 @MainActor
 final class TeamResultDragTests: XCTestCase {
     private var app: XCUIApplication!
@@ -10,14 +10,13 @@ final class TeamResultDragTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    /// アプリを起動し、サンプルの大会を作って2チームに分けた結果の画面を開く
+    /// アプリを「テスト大会」を入れた状態で起動し、2チームに分けた結果の画面を開く
     private func openSplitResult() {
         app = XCUIApplication()
-        app.launchArguments = ["-UITestInMemory"]
+        app.launchArguments = ["-UITestInMemory", "-UITestSeedEvent"]
         app.launch()
 
-        app.buttons["サンプルの大会を作る"].tap()
-        app.staticTexts["サンプル大会"].tap()
+        app.staticTexts["テスト大会"].tap()
         app.buttons["実力が均等になるように分ける"].tap()
         XCTAssertTrue(app.staticTexts["チームA"].waitForExistence(timeout: 5))
     }
