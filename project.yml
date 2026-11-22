@@ -1,0 +1,44 @@
+name: FutsalTeamMaker
+options:
+  bundleIdPrefix: com.dorudorujr
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  FutsalTeamMaker:
+    type: application
+    platform: iOS
+    sources:
+      - FutsalTeamMaker
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.dorudorujr.FutsalTeamMaker
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: チーム分け
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        TARGETED_DEVICE_FAMILY: "1"
+        DEVELOPMENT_LANGUAGE: ja
+  FutsalTeamMakerTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - FutsalTeamMakerTests
+    dependencies:
+      - target: FutsalTeamMaker
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  FutsalTeamMaker:
+    build:
+      targets:
+        FutsalTeamMaker: all
+    test:
+      targets:
+        - FutsalTeamMakerTests
