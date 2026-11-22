@@ -21,10 +21,6 @@ struct TeamResultView: View {
     private var teams: [Team] { result?.teams ?? [] }
     private var hasGender: Bool { members.contains { $0.gender != .unspecified } }
 
-    private func spread(_ values: [Int]) -> Int {
-        (values.max() ?? 0) - (values.min() ?? 0)
-    }
-
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -78,16 +74,8 @@ struct TeamResultView: View {
 
     private var summaryCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            VStack(spacing: 0) {
-                summaryRow("参加者", "\(members.count) 人")
-                Divider()
-                summaryRow("実力の合計の差（最大−最小）", "\(spread(teams.map(\.totalSkill)))")
-                if hasGender {
-                    Divider()
-                    summaryRow("女性の人数の差（最大−最小）", "\(spread(teams.map(\.femaleCount)))")
-                }
-            }
-            .cardBackground()
+            summaryRow("参加者", "\(members.count) 人")
+                .cardBackground()
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("選手を長押ししてドラッグし、別のチームの選手の上で離すと入れ替わります。チームの選手がいないところ（チーム名など）で離すと、そのチームへ移ります。")
