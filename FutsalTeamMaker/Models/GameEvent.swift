@@ -18,6 +18,8 @@ final class GameEvent {
     var groups: [EventGroup] = []
     /// 最後に分けた結果（`SavedResult` を JSON にしたもの）。入れ子の構造をそのまま保存せず、まとめて1つのデータにしている。
     var lastResultData: Data?
+    /// 分けるとき、前回の結果で同じチームだった人をなるべく別のチームにするか
+    var avoidsRepeatingTeammates: Bool = true
 
     init(name: String, teamCount: Int = 2) {
         self.id = UUID()
@@ -66,7 +68,7 @@ final class GameEvent {
 
     // MARK: - 最後に分けた結果
 
-    /// 最後に分けた結果。分けたときや手で直したときに上書きする。
+    /// 最後に確定した結果（大会の「前回の結果」）。結果の画面で「確定」を押したときに上書きする。
     var lastResult: SavedResult? {
         get { lastResultData.flatMap { try? JSONDecoder().decode(SavedResult.self, from: $0) } }
         set { lastResultData = newValue.flatMap { try? JSONEncoder().encode($0) } }

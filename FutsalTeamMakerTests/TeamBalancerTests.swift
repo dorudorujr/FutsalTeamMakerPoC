@@ -260,3 +260,119 @@ struct ManualAssignmentTests {
         #expect(result.brokenGroups.isEmpty)
     }
 }
+
+struct RepeatAvoidanceTests {
+    private func players(_ skills: [Int]) -> [TeamMember] {
+        skills.enumerated().map { TeamMember(id: UUID(), name: "選手\($0.offset)", skill: $0.element) }
+    }
+
+    @Test("前回同じチームだった人どうしは、なるべく別のチームになる")
+    func avoidsRepeatsWhenBalanceAllows() {
+        // 全員同じ実力の8人。前回は前半4人と後半4人のチーム。
+        // 4人ずつに分けると、前回のチームから2人ずつ入るのが一番被りが少ない。
+        // 2人ずつ入ると、各チームで前回の前半どうし1組・後半どうし1組が被るので、合計4組（そのままなら12組）
+        let input = players([3, 3, 3, 3, 3, 3, 3, 3])
+        let previous = [input[0..<4].map(\.id), input[4..<8].map(\.id)]
+        for seed in 0..<20 {
+            var rng = SeededGenerator(seed: UInt64(seed))
+            let result = TeamBalancer.split(input, teamCount: 2, previousTeams: previous, using: &rng)
+            #expect(result.repeatedPairs.count == 4)
+            #expect(result.previousTeams == previous)
+        }
+    }
+
+    @Test("前回と比べないときは、被りを数えない")
+    func noPreviousTeamsMeansNoRepeats() {
+        let input = players([3, 3, 3, 3])
+        var rng = SeededGenerator(seed: 1)
+        let result = TeamBalancer.split(input, teamCount: 2, using: &rng)
+        #expect(result.repeatedPairs.isEmpty)
+    }
+
+    @Test("実力の差をそろえることを、前回との被りより優先する")
+    func skillBalanceBeatsRepeats() {
+        // 4,3,2,1 を2人ずつに分けると、合計がそろうのは {4,1} と {3,2} だけ。前回も同じ組み合わせだった
+        let input = players([4, 3, 2, 1])
+        let previous = [[input[0].id, input[3].id], [input[1].id, input[2].id]]
+        var rng = SeededGenerator(seed: 2)
+        let result = TeamBalancer.split(input, teamCount: 2, previousTeams: previous, using: &rng)
+
+        #expect(result.teams.map(\.totalSkill).sorted() == [5, 5])
+        #expect(result.repeatedPairs.count == 2)
+    }
+
+    @Test("同じチームにするメンバーどうしは、前回も同じでも被りに数えない")
+    func groupedPairsAreNotCounted() {
+        // 3人ずつの2チーム。前回は 0,1,2 と 3,4,5。0と1は「必ず同じチーム」。
+        // 0,1 に後半の1人を入れると、もう一方のチームで後半どうしの1組だけが被る（0と1は数えない）
+        let input = players([3, 3, 3, 3, 3, 3])
+        let previous = [input[0..<3].map(\.id), input[3..<6].map(\.id)]
+        let group = MemberGroup(memberIDs: [input[0].id, input[1].id], isRequired: true)
+        for seed in 0..<10 {
+            var rng = SeededGenerator(seed: UInt64(seed))
+            let result = TeamBalancer.split(input, teamCount: 2, groups: [group], previousTeams: previous, using: &rng)
+
+            #expect(result.brokenGroups.isEmpty)
+            #expect(result.repeatedPairs.count == 1)
+            #expect(!result.repeatedPairs.contains { Set($0) == [input[0].id, input[1].id] })
+        }
+    }
+
+    @Test("手で直すと、前回との被りも今のチームから求め直す")
+    func repeatedPairsFollowManualEdits() {
+        let input = players([3, 3, 3, 3])
+        var result = SplitResult(
+            teams: [Team(id: 0, members: [input[0], input[2]]), Team(id: 1, members: [input[1], input[3]])],
+            groups: [],
+            previousTeams: [[input[0].id, input[1].id], [input[2].id, input[3].id]]
+        )
+        #expect(result.repeatedPairs.isEmpty)
+
+        result.swap(input[2].id, input[1].id)
+        #expect(result.repeatedPairs.count == 2)
+    }
+
+    @Test("前回のチームを持たない、前のバージョンで保存した結果も読める")
+    func decodesResultWithoutPreviousTeams() throws {
+        let member = TeamMember(id: UUID(), name: "佐藤", skill: 5)
+        let json = """
+        {"teams":[{"id":0,"members":[{"id":"\(member.id.uuidString)","name":"佐藤","skill":5,"gender":"unspecified"}]}],"groups":[]}
+        """
+        let decoded = try JSONDecoder().decode(SplitResult.self, from: Data(json.utf8))
+        #expect(decoded.teams.first?.members == [member])
+        #expect(decoded.previousTeams.isEmpty)
+    }
+}
+
+struct RepeatedTeammatesTests {
+    @Test("前回も一緒だった人を、今のチームごと・前回のチームごとにまとめる")
+    func clustersByPreviousTeam() {
+        let p = (0..<6).map { TeamMember(id: UUID(), name: "選手\($0)", skill: 3) }
+        // 前回: {0,1,2} {3,4,5}
+        // 今回: チームA {0,1,3}、チームB {2,4,5}
+        let result = SplitResult(
+            teams: [Team(id: 0, members: [p[0], p[1], p[3]]), Team(id: 1, members: [p[2], p[4], p[5]])],
+            groups: [],
+            previousTeams: [[p[0].id, p[1].id, p[2].id], [p[3].id, p[4].id, p[5].id]]
+        )
+
+        #expect(result.repeatedTeammates == [
+            RepeatedTeammates(teamID: 0, members: [p[0], p[1]]),
+            RepeatedTeammates(teamID: 1, members: [p[4], p[5]]),
+        ])
+        // 1人だけのまとまり（チームAの3、チームBの2）は出さない
+        #expect(result.repeatedPairs.count == 2)
+    }
+
+    @Test("同じチームにするメンバーの2人だけのまとまりは出さない")
+    func groupOnlyClusterIsHidden() {
+        let p = (0..<4).map { TeamMember(id: UUID(), name: "選手\($0)", skill: 3) }
+        let result = SplitResult(
+            teams: [Team(id: 0, members: [p[0], p[1]]), Team(id: 1, members: [p[2], p[3]])],
+            groups: [MemberGroup(memberIDs: [p[0].id, p[1].id], isRequired: true)],
+            previousTeams: [[p[0].id, p[1].id], [p[2].id, p[3].id]]
+        )
+
+        #expect(result.repeatedTeammates == [RepeatedTeammates(teamID: 1, members: [p[2], p[3]])])
+    }
+}
